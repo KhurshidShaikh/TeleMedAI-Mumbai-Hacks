@@ -1,0 +1,309 @@
+import { useState, useRef, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Send,
+  Bot,
+  User,
+  Loader2,
+  Sparkles,
+  Clock,
+  MessageSquare
+} from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { suggestedQueries } from '../data/mockData';
+import { getStoredUser } from '@/services/auth.service';
+
+interface Message {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: Date;
+}
+
+export const AIChatbot = () => {
+  const [messages, setMessages] = useState<Message[]>([
+    {
+      id: '1',
+      role: 'assistant',
+      content: 'Hello! I\'m your AI Health Assistant. I can help answer questions about your health, medications, symptoms, and provide general medical information. How can I assist you today?',
+      timestamp: new Date()
+    }
+  ]);
+  const [input, setInput] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  const handleSendMessage = async (messageText?: string) => {
+    const textToSend = messageText || input;
+    if (!textToSend.trim()) return;
+
+    const user = getStoredUser();
+    if (!user) {
+      console.error("User not found");
+      return;
+    }
+    // specific to mongo/mongoose, usually _id, but auth service might map it. checking both.
+    const userId = user.id || user._id;
+
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: textToSend,
+      timestamp: new Date()
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    setInput('');
+    setIsTyping(true);
+
+    try {
+      const response = await fetch('http://localhost:8000/api/v1/agent/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: userId,
+          message: textToSend,
+          history: messages.map(m => ({ role: m.role, content: m.content }))
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      const aiResponse: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: data.response,
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, aiResponse]);
+
+    } catch (error) {
+      console.error("Error sending message:", error);
+      const errorResponse: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: "I apologize, but I'm having trouble connecting to the server. Please try again later.",
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, errorResponse]);
+    } finally {
+      setIsTyping(false);
+    }
+  };
+
+  const handleSuggestedQuery = (query: string) => {
+    handleSendMessage(query);
+  };
+
+  return (
+    <div className="h-[calc(100vh-8rem)] flex flex-col space-y-3 sm:space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gradient-to-br from-primary to-blue-600 flex items-center justify-center flex-shrink-0">
+            <Bot className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+          </div>
+          <div className="min-w-0">
+            <h1 className="text-lg sm:text-xl md:text-2xl font-bold text-gray-900 truncate">AI Health Assistant</h1>
+            <div className="flex items-center gap-1.5 sm:gap-2 mt-0.5 sm:mt-1">
+              <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-green-600 animate-pulse flex-shrink-0" />
+              <span className="text-xs sm:text-sm text-gray-600">Online & Ready</span>
+            </div>
+          </div>
+        </div>
+        <Badge variant="secondary" className="flex items-center gap-1 flex-shrink-0 text-[10px] sm:text-xs px-2 sm:px-2.5 py-0.5 sm:py-1">
+          <Sparkles className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+          <span className="hidden xs:inline">AI Powered</span>
+          <span className="xs:hidden">AI</span>
+        </Badge>
+      </div>
+
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-3 sm:gap-4 min-h-0">
+        {/* Chat Area */}
+        <div className="lg:col-span-3 flex flex-col min-h-0">
+          <Card className="flex-1 flex flex-col min-h-0">
+            <CardContent className="p-3 sm:p-4 flex flex-col flex-1 min-h-0">
+              {/* Messages */}
+              <div className="flex-1 overflow-y-auto space-y-3 sm:space-y-4 mb-3 sm:mb-4 pr-1 sm:pr-2">
+                <AnimatePresence>
+                  {messages.map((message, index) => (
+                    <motion.div
+                      key={message.id}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                      transition={{ delay: index * 0.05 }}
+                      className={`flex gap-2 sm:gap-3 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}
+                    >
+                      {/* Avatar */}
+                      <Avatar className={`w-7 h-7 sm:w-8 sm:h-8 flex-shrink-0 ${message.role === 'assistant'
+                          ? 'bg-gradient-to-br from-primary to-blue-600'
+                          : 'bg-gray-600'
+                        }`}>
+                        <AvatarFallback className="text-white">
+                          {message.role === 'assistant' ? <Bot className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> : <User className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
+                        </AvatarFallback>
+                      </Avatar>
+
+                      {/* Message Content */}
+                      <div className={`flex-1 ${message.role === 'user' ? 'flex justify-end' : ''}`}>
+                        <div
+                          className={`
+                            inline-block px-3 py-2 sm:px-4 sm:py-3 rounded-2xl max-w-[85%] sm:max-w-[80%]
+                            ${message.role === 'user'
+                              ? 'bg-primary text-white rounded-tr-none'
+                              : 'bg-gray-100 text-gray-900 rounded-tl-none'
+                            }
+                          `}
+                        >
+                          <p className="text-xs sm:text-sm whitespace-pre-wrap leading-relaxed">
+                            {message.content}
+                          </p>
+                          <div className={`flex items-center gap-1 mt-1.5 sm:mt-2 text-[10px] sm:text-xs ${message.role === 'user' ? 'text-white/70' : 'text-gray-500'
+                            }`}>
+                            <Clock className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+                            <span>
+                              {message.timestamp.toLocaleTimeString('en-US', {
+                                hour: 'numeric',
+                                minute: '2-digit'
+                              })}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+
+                {/* Typing Indicator */}
+                {isTyping && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="flex gap-2 sm:gap-3"
+                  >
+                    <Avatar className="w-7 h-7 sm:w-8 sm:h-8 bg-gradient-to-br from-primary to-blue-600">
+                      <AvatarFallback className="text-white">
+                        <Bot className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="bg-gray-100 px-3 py-2 sm:px-4 sm:py-3 rounded-2xl rounded-tl-none">
+                      <div className="flex gap-1">
+                        <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-gray-400 animate-bounce" />
+                        <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '0.2s' }} />
+                        <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '0.4s' }} />
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+
+                <div ref={messagesEndRef} />
+              </div>
+
+              {/* Input Area */}
+              <div className="flex gap-2">
+                <Input
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                  placeholder="Type your health question..."
+                  className="flex-1 h-9 sm:h-10 text-sm"
+                  disabled={isTyping}
+                />
+                <Button
+                  onClick={() => handleSendMessage()}
+                  disabled={!input.trim() || isTyping}
+                  size="icon"
+                  className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0"
+                >
+                  {isTyping ? (
+                    <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin" />
+                  ) : (
+                    <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Sidebar */}
+        <div className="space-y-3 sm:space-y-4 overflow-y-auto">
+          {/* Suggested Queries */}
+          <Card>
+            <CardContent className="p-3 sm:p-4">
+              <h3 className="font-semibold text-sm sm:text-base text-gray-900 mb-2 sm:mb-3 flex items-center gap-1.5 sm:gap-2">
+                <MessageSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                Quick Questions
+              </h3>
+              <div className="space-y-1.5 sm:space-y-2">
+                {suggestedQueries.map((query, index) => (
+                  <motion.button
+                    key={index}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: index * 0.1 }}
+                    onClick={() => handleSuggestedQuery(query)}
+                    className="w-full text-left p-2 sm:p-3 text-xs sm:text-sm bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+                    disabled={isTyping}
+                  >
+                    {query}
+                  </motion.button>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Info Card */}
+          <Card className="bg-blue-50 border-blue-200">
+            <CardContent className="p-3 sm:p-4">
+              <div className="flex items-start gap-1.5 sm:gap-2">
+                <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <h3 className="font-semibold text-blue-900 text-xs sm:text-sm mb-1">AI Assistant Info</h3>
+                  <p className="text-[10px] sm:text-xs text-blue-800 leading-relaxed">
+                    This AI assistant provides general health information based on your records.
+                    For medical emergencies or specific diagnoses, always consult a healthcare professional.
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Privacy Notice */}
+          <Card>
+            <CardContent className="p-3 sm:p-4">
+              <h3 className="font-semibold text-gray-900 text-xs sm:text-sm mb-1.5 sm:mb-2">🔒 Privacy & Security</h3>
+              <ul className="space-y-0.5 sm:space-y-1 text-[10px] sm:text-xs text-gray-600">
+                <li>• End-to-end encrypted</li>
+                <li>• HIPAA compliant</li>
+                <li>• Conversations are private</li>
+                <li>• Data not shared with third parties</li>
+              </ul>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default AIChatbot;
